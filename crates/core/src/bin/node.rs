@@ -22,7 +22,7 @@ static PEER_ID: Lazy<PeerId> = Lazy::new(|| PeerId::from(KEY.public()));
 static TOPIC: Lazy<Topic> = Lazy::new(|| Topic::new("Rustic Chain of Blocks"));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct TxInfo {
+struct TxRequest {
     from: String,
     to: String,
     value: u64,
@@ -30,7 +30,7 @@ struct TxInfo {
 }
 
 enum EventType {
-    Response(TxInfo),
+    Response(TxRequest),
     Input(String),
 }
 
@@ -40,17 +40,17 @@ struct TransactionBehaviour {
     mdns: Mdns,
     #[allow(dead_code)]
     #[behaviour(ignore)]
-    response_sender: mpsc::UnboundedSender<TxInfo>,
+    response_sender: mpsc::UnboundedSender<TxRequest>,
 }
 
 impl NetworkBehaviourEventProcess<FloodsubEvent> for TransactionBehaviour {
     fn inject_event(&mut self, event: FloodsubEvent) {
         match event {
             FloodsubEvent::Message(msg) => {
-                if let Ok(tx_info) = serde_json::from_slice::<TxInfo>(&msg.data) {
+                if let Ok(tx_req) = serde_json::from_slice::<TxRequest>(&msg.data) {
                     info!(
-                        "Received transaction: {:?} from peer {:?}",
-                        tx_info, msg.source
+                        "Received transaction request {:?} from peer {:?}",
+                        tx_req, msg.source
                     );
                 } else {
                     info!(
@@ -152,7 +152,7 @@ async fn main() -> Result<()> {
                         .as_slice()
                     {
                         ["tx", from, to, value, private_key] => {
-                            let tx_info = TxInfo {
+                            let tx_info = TxRequest {
                                 from: from.to_string(),
                                 to: to.to_string(),
                                 value: value.to_string().parse::<u64>()?,
