@@ -1,185 +1,161 @@
 use eyre::Result;
+use futures::stream::StreamExt;
 use libp2p::{
-    core::upgrade,
-    floodsub::{Floodsub, FloodsubEvent, Topic},
-    futures::StreamExt,
-    identity,
-    mdns::{Mdns, MdnsEvent},
-    mplex,
-    noise::{Keypair, NoiseConfig, X25519Spec},
-    swarm::{NetworkBehaviourEventProcess, Swarm, SwarmBuilder, SwarmEvent},
-    tcp::TokioTcpConfig,
-    NetworkBehaviour, PeerId, Transport,
+    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId,
 };
-use log::{error, info};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use tokio::{io::AsyncBufReadExt, sync::mpsc};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    time::Duration,
+};
+use tokio::{io, io::AsyncBufReadExt, select};
+use tracing_subscriber::EnvFilter;
 
-static KEY: Lazy<identity::Keypair> = Lazy::new(|| identity::Keypair::generate_ed25519());
-static PEER_ID: Lazy<PeerId> = Lazy::new(|| PeerId::from(KEY.public()));
-static TOPIC: Lazy<Topic> = Lazy::new(|| Topic::new("Rustic Chain of Blocks"));
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TxRequest {
-    from: String,
-    to: String,
-    value: u64,
-    private_key: String,
-}
-
-enum EventType {
-    Response(TxRequest),
-    Input(String),
-}
+static TOPIC: Lazy<gossipsub::IdentTopic> = Lazy::new(|| gossipsub::IdentTopic::new("P2P"));
 
 #[derive(NetworkBehaviour)]
-struct TransactionBehaviour {
-    floodsub: Floodsub,
-    mdns: Mdns,
-    #[allow(dead_code)]
-    #[behaviour(ignore)]
-    response_sender: mpsc::UnboundedSender<TxRequest>,
+struct P2PBehaviour {
+    gossipsub: gossipsub::Behaviour,
+    mdns: mdns::tokio::Behaviour,
 }
 
-impl NetworkBehaviourEventProcess<FloodsubEvent> for TransactionBehaviour {
-    fn inject_event(&mut self, event: FloodsubEvent) {
-        match event {
-            FloodsubEvent::Message(msg) => {
-                if let Ok(tx_req) = serde_json::from_slice::<TxRequest>(&msg.data) {
-                    info!(
-                        "Received transaction request {:?} from peer {:?}",
-                        tx_req, msg.source
-                    );
-                } else {
-                    info!(
-                        "Failed to deserialize message data from peer {:?}",
-                        msg.source
-                    );
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
-impl NetworkBehaviourEventProcess<MdnsEvent> for TransactionBehaviour {
-    fn inject_event(&mut self, event: MdnsEvent) {
-        match event {
-            MdnsEvent::Discovered(discovered_list) => {
-                for (peer, _addr) in discovered_list {
-                    self.floodsub.add_node_to_partial_view(peer);
-                }
-            }
-            MdnsEvent::Expired(expired_list) => {
-                for (peer, _addr) in expired_list {
-                    if !self.mdns.has_node(&peer) {
-                        self.floodsub.remove_node_from_partial_view(&peer);
-                    }
-                }
-            }
-        }
-    }
-}
-#[allow(unreachable_code)]
 #[tokio::main]
 async fn main() -> Result<()> {
-    pretty_env_logger::init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init();
 
-    let (response_sender, mut response_rcv) = mpsc::unbounded_channel();
-    let auth_keys = Keypair::<X25519Spec>::new().into_authentic(&KEY)?;
+    let mut swarm = libp2p::SwarmBuilder::with_new_identity()
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default(),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_quic()
+        .with_behaviour(|key| {
+            let message_id_fn = |message: &gossipsub::Message| {
+                let mut s = DefaultHasher::new();
+                message.data.hash(&mut s);
+                gossipsub::MessageId::from(s.finish().to_string())
+            };
 
-    let transport = TokioTcpConfig::new()
-        .upgrade(upgrade::Version::V1)
-        .authenticate(NoiseConfig::xx(auth_keys).into_authenticated())
-        .multiplex(mplex::MplexConfig::new())
-        .boxed();
+            let gossipsub_config = gossipsub::ConfigBuilder::default()
+                .heartbeat_interval(Duration::from_secs(10))
+                .validation_mode(gossipsub::ValidationMode::Strict)
+                .message_id_fn(message_id_fn)
+                .build()
+                .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?;
 
-    let mut behaviour = TransactionBehaviour {
-        floodsub: Floodsub::new(PEER_ID.clone()),
-        mdns: Mdns::new(Default::default()).await?,
-        response_sender,
-    };
+            let gossipsub = gossipsub::Behaviour::new(
+                gossipsub::MessageAuthenticity::Signed(key.clone()),
+                gossipsub_config,
+            )?;
 
-    behaviour.floodsub.subscribe(TOPIC.clone());
-
-    let mut swarm = SwarmBuilder::new(transport, behaviour, PEER_ID.clone())
-        .executor(Box::new(|fut| {
-            tokio::spawn(fut);
-        }))
+            let mdns =
+                mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
+            Ok(P2PBehaviour { gossipsub, mdns })
+        })?
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
 
-    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    swarm.behaviour_mut().gossipsub.subscribe(&TOPIC)?;
 
-    Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
+    let mut stdin = io::BufReader::new(io::stdin()).lines();
+
+    swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
+    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+
+    println!("Node is live!");
 
     loop {
-        let evt = {
-            tokio::select! {
-                line = stdin.next_line() => Some(EventType::Input(line.expect("Input error!").expect("Input error!"))),
-                response = response_rcv.recv() => Some(EventType::Response(response.expect("Response error!"))),
-                event = swarm.select_next_some() => {
-                    match event {
-                        SwarmEvent::NewListenAddr { address, .. } => {
-                            info!("Node started listening at {:?}", address);
-                            None
-                        },
-                        SwarmEvent::ConnectionEstablished  { peer_id, .. } => {
-                            info!("Connection established with peer {:?}", peer_id);
-                            None
-                        },
-                        _ => None,
+        select! {
+            Ok(Some(line)) = stdin.next_line() => {
+                let input = handle_input(line.to_string()).await?;
+                if let Err(e) = swarm
+                    .behaviour_mut().gossipsub
+                    .publish(TOPIC.clone(), input.as_bytes()) {
+                    println!("Publish error: {e:?}");
+                }
+            }
+            event = swarm.select_next_some() => match event {
+                SwarmEvent::Behaviour(P2PBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
+                    for (peer_id, _multiaddr) in list {
+                        println!("Discovered a new peer: {peer_id}");
+                        swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     }
                 },
-            }
-        };
-
-        if let Some(event) = evt {
-            match event {
-                EventType::Response(resp) => {
-                    let json = serde_json::to_string(&resp)?;
-                    swarm
-                        .behaviour_mut()
-                        .floodsub
-                        .publish(TOPIC.clone(), json.as_bytes());
-                }
-                EventType::Input(line) => {
-                    match line
-                        .trim()
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .as_slice()
-                    {
-                        ["tx", from, to, value, private_key] => {
-                            let tx_info = TxRequest {
-                                from: from.to_string(),
-                                to: to.to_string(),
-                                value: value.to_string().parse::<u64>()?,
-                                private_key: private_key.to_string(),
-                            };
-                            let tx_info_json = serde_json::to_string(&tx_info)?;
-                            swarm
-                                .behaviour_mut()
-                                .floodsub
-                                .publish(TOPIC.clone(), tx_info_json.as_bytes());
-                        }
-                        ["ls", "p"] => handle_list_peers(&mut swarm).await,
-                        _ => error!("Unknown command"),
+                SwarmEvent::Behaviour(P2PBehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
+                    for (peer_id, _multiaddr) in list {
+                        println!("Peer {peer_id} has expired");
+                        swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                     }
-                }
+                },
+                SwarmEvent::Behaviour(P2PBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                    propagation_source: peer_id,
+                    message_id: _id,
+                    message,
+                })) => {
+                    if let Err(e) = handle_message(message.data, peer_id).await {
+                        println!("Error handling message: {:?}", e);
+                    }
+                },
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    println!("Node is listening on {address}");
+                },
+                _ => ()
             }
         }
     }
-    Ok(())
 }
 
-async fn handle_list_peers(swarm: &mut Swarm<TransactionBehaviour>) {
-    info!("Discovered Peers:");
-    let nodes = swarm.behaviour().mdns.discovered_nodes();
-    let mut unique_peers = HashSet::new();
-    for peer in nodes {
-        unique_peers.insert(peer);
+#[derive(Debug, Serialize, Deserialize)]
+struct P2PRequest {
+    id: u64,
+    data: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct P2PResponse {
+    id: u64,
+    data: Vec<u8>,
+}
+
+async fn handle_input(line: String) -> Result<String> {
+    let input: Vec<&str> = line.trim().split_whitespace().collect();
+
+    let request = P2PRequest {
+        id: input[0].to_string().parse::<u64>()?,
+        data: input[1].to_string().as_bytes().to_vec(),
+    };
+
+    match request.id {
+        0 => println!("Sent Hello message"),
+        1 => println!("Sent NewTransaction message"),
+        2 => println!("Sent NewBlock message"),
+        3 => println!("Sent GetBlock message"),
+        4 => println!("Sent Block message"),
+        _ => println!("Unknown message type"),
     }
-    unique_peers.iter().for_each(|p| info!("{}", p));
+
+    let json_request = serde_json::to_string(&request)?;
+
+    Ok(json_request)
+}
+
+async fn handle_message(message: Vec<u8>, peer_id: PeerId) -> Result<()> {
+    let response: P2PResponse = serde_json::from_slice(&message)?;
+
+    match response.id {
+        0 => println!("Received Hello from {peer_id}"),
+        1 => println!("Received NewTransaction from {peer_id}"),
+        2 => println!("Received NewBlock from {peer_id}"),
+        3 => println!("Received GetBlock from {peer_id}"),
+        4 => println!("Received Block from {peer_id}"),
+        _ => println!("Unknown message type!"),
+    }
+
+    Ok(())
 }
