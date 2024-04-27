@@ -1,9 +1,6 @@
 [workspace]
-
-members = [
-    "crates/core",
-    "crates/helper",
-]
+members = ["crates/core"]
+exclude = ["crates/helper"]
 resolver = "2"
 
 [workspace.package]
