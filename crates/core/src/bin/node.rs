@@ -112,26 +112,36 @@ async fn main() -> Result<()> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct P2PRequest {
+struct P2PMessage {
     id: u64,
-    data: Vec<u8>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct P2PResponse {
-    id: u64,
-    data: Vec<u8>,
+    code: Option<u64>,
+    want: Option<u64>,
+    data: Option<Vec<u8>>,
 }
 
 async fn handle_input(line: String) -> Result<String> {
     let input: Vec<&str> = line.trim().split_whitespace().collect();
 
-    let request = P2PRequest {
-        id: input[0].to_string().parse::<u64>()?,
-        data: input[1].to_string().as_bytes().to_vec(),
+    let message = P2PMessage {
+        id: input[0].parse::<u64>()?,
+        code: if input.len() > 1 {
+            Some(input[1].parse::<u64>()?)
+        } else {
+            None
+        },
+        want: if input.len() > 2 {
+            Some(input[2].parse::<u64>()?)
+        } else {
+            None
+        },
+        data: if input.len() > 3 {
+            Some(input[3].to_string().as_bytes().to_vec())
+        } else {
+            None
+        },
     };
 
-    match request.id {
+    match message.id {
         0 => println!("Sent Hello message"),
         1 => println!("Sent NewTransaction message"),
         2 => println!("Sent NewBlock message"),
@@ -140,15 +150,15 @@ async fn handle_input(line: String) -> Result<String> {
         _ => println!("Unknown message type"),
     }
 
-    let json_request = serde_json::to_string(&request)?;
+    let json_msg = serde_json::to_string(&message)?;
 
-    Ok(json_request)
+    Ok(json_msg)
 }
 
 async fn handle_message(message: Vec<u8>, peer_id: PeerId) -> Result<()> {
-    let response: P2PResponse = serde_json::from_slice(&message)?;
+    let message: P2PMessage = serde_json::from_slice(&message)?;
 
-    match response.id {
+    match message.id {
         0 => println!("Received Hello from {peer_id}"),
         1 => println!("Received NewTransaction from {peer_id}"),
         2 => println!("Received NewBlock from {peer_id}"),
