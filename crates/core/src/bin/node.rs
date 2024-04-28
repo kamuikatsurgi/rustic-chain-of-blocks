@@ -1,7 +1,7 @@
 use eyre::Result;
 use futures::stream::StreamExt;
 use libp2p::{
-    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId,
+    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId, Swarm,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -73,12 +73,7 @@ async fn main() -> Result<()> {
     loop {
         select! {
             Ok(Some(line)) = stdin.next_line() => {
-                let input = handle_input(line.to_string()).await?;
-                if let Err(e) = swarm
-                    .behaviour_mut().gossipsub
-                    .publish(TOPIC.clone(), input.as_bytes()) {
-                    println!("Publish error: {e:?}");
-                }
+                handle_input(&mut swarm, line.to_string()).await?;
             }
             event = swarm.select_next_some() => match event {
                 SwarmEvent::Behaviour(P2PBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
@@ -98,9 +93,7 @@ async fn main() -> Result<()> {
                     message_id: _id,
                     message,
                 })) => {
-                    if let Err(e) = handle_message(message.data, peer_id).await {
-                        println!("Error handling message: {:?}", e);
-                    }
+                    handle_message(&mut swarm, peer_id, message.data).await?
                 },
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("Node is listening on {address}");
@@ -111,35 +104,38 @@ async fn main() -> Result<()> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum P2PMessageType {
+    Request,
+    Response,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct P2PMessage {
     id: u64,
     code: Option<u64>,
     want: Option<u64>,
     data: Option<Vec<u8>>,
+    msgtype: P2PMessageType,
 }
 
-async fn handle_input(line: String) -> Result<String> {
+async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<()> {
     let input: Vec<&str> = line.trim().split_whitespace().collect();
 
     let message = P2PMessage {
         id: input[0].parse::<u64>()?,
-        code: if input.len() > 1 {
-            Some(input[1].parse::<u64>()?)
-        } else {
-            None
-        },
-        want: if input.len() > 2 {
-            Some(input[2].parse::<u64>()?)
-        } else {
-            None
-        },
-        data: if input.len() > 3 {
-            Some(input[3].to_string().as_bytes().to_vec())
-        } else {
-            None
-        },
+        code: None,
+        want: None,
+        data: None,
+        msgtype: P2PMessageType::Request,
     };
+
+    let json_msg = serde_json::to_string(&message)?;
+
+    swarm
+        .behaviour_mut()
+        .gossipsub
+        .publish(TOPIC.clone(), json_msg.as_bytes())?;
 
     match message.id {
         0 => println!("Sent Hello message"),
@@ -149,23 +145,44 @@ async fn handle_input(line: String) -> Result<String> {
         4 => println!("Sent Block message"),
         _ => println!("Unknown message type"),
     }
-
-    let json_msg = serde_json::to_string(&message)?;
-
-    Ok(json_msg)
+    Ok(())
 }
 
-async fn handle_message(message: Vec<u8>, peer_id: PeerId) -> Result<()> {
+async fn handle_message(
+    swarm: &mut Swarm<P2PBehaviour>,
+    peer_id: PeerId,
+    message: Vec<u8>,
+) -> Result<()> {
     let message: P2PMessage = serde_json::from_slice(&message)?;
+    if message.msgtype == P2PMessageType::Response {
+        let data = String::from_utf8(message.data.unwrap());
+        match message.id {
+            0 => println!("Received {:?} from {peer_id}", data),
+            1 => println!("Received {:?} from {peer_id}", data),
+            2 => println!("Received {:?} from {peer_id}", data),
+            3 => println!("Received {:?} from {peer_id}", data),
+            4 => println!("Received {:?} from {peer_id}", data),
+            _ => println!("Unknown message type!"),
+        }
+    } else {
+        match message.id {
+            // Sending Hello as response for every request.
+            _ => {
+                let msg = P2PMessage {
+                    id: message.id,
+                    code: None,
+                    want: None,
+                    data: Some("Hello".to_string().as_bytes().to_vec()),
+                    msgtype: P2PMessageType::Response,
+                };
+                let json_msg = serde_json::to_string(&msg)?;
 
-    match message.id {
-        0 => println!("Received Hello from {peer_id}"),
-        1 => println!("Received NewTransaction from {peer_id}"),
-        2 => println!("Received NewBlock from {peer_id}"),
-        3 => println!("Received GetBlock from {peer_id}"),
-        4 => println!("Received Block from {peer_id}"),
-        _ => println!("Unknown message type!"),
+                swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .publish(TOPIC.clone(), json_msg.as_bytes())?;
+            }
+        }
     }
-
     Ok(())
 }
