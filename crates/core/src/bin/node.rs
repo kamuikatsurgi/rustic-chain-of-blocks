@@ -122,7 +122,7 @@ struct P2PMessage {
 async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<()> {
     let input: Vec<&str> = line.trim().split_whitespace().collect();
 
-    let message = P2PMessage {
+    let msg = P2PMessage {
         id: input[0].parse::<u64>()?,
         code: None,
         want: None,
@@ -130,14 +130,14 @@ async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<(
         msgtype: P2PMessageType::Request,
     };
 
-    let json_msg = serde_json::to_string(&message)?;
+    let msg_json = serde_json::to_string(&msg)?;
 
     swarm
         .behaviour_mut()
         .gossipsub
-        .publish(TOPIC.clone(), json_msg.as_bytes())?;
+        .publish(TOPIC.clone(), msg_json.as_bytes())?;
 
-    match message.id {
+    match msg.id {
         0 => println!("Sent Hello message"),
         1 => println!("Sent NewTransaction message"),
         2 => println!("Sent NewBlock message"),
@@ -153,35 +153,38 @@ async fn handle_message(
     peer_id: PeerId,
     message: Vec<u8>,
 ) -> Result<()> {
-    let message: P2PMessage = serde_json::from_slice(&message)?;
-    if message.msgtype == P2PMessageType::Response {
-        let data = String::from_utf8(message.data.unwrap());
-        match message.id {
-            0 => println!("Received {:?} from {peer_id}", data),
-            1 => println!("Received {:?} from {peer_id}", data),
-            2 => println!("Received {:?} from {peer_id}", data),
-            3 => println!("Received {:?} from {peer_id}", data),
-            4 => println!("Received {:?} from {peer_id}", data),
-            _ => println!("Unknown message type!"),
-        }
-    } else {
-        match message.id {
-            // Sending Hello as response for every request.
+    let msg: P2PMessage = serde_json::from_slice(&message)?;
+    if msg.msgtype == P2PMessageType::Request {
+        println!("Received message {:?} from peer {peer_id}", msg.id);
+        match msg.id {
+            // Sending Hello as response for every request as of now.
             _ => {
-                let msg = P2PMessage {
-                    id: message.id,
+                let msg_resp = P2PMessage {
+                    id: msg.id,
                     code: None,
                     want: None,
                     data: Some("Hello".to_string().as_bytes().to_vec()),
                     msgtype: P2PMessageType::Response,
                 };
-                let json_msg = serde_json::to_string(&msg)?;
 
+                let msg_resp_json = serde_json::to_string(&msg_resp)?;
                 swarm
                     .behaviour_mut()
                     .gossipsub
-                    .publish(TOPIC.clone(), json_msg.as_bytes())?;
+                    .publish(TOPIC.clone(), msg_resp_json.as_bytes())?;
+                println!("Sent Hello as a response");
             }
+        }
+    } else {
+        // P2PMessageType::Response
+        let data = String::from_utf8(msg.data.unwrap());
+        match msg.id {
+            0 => println!("Received {:?} from {peer_id}", data),
+            1 => println!("Received {:?} from {peer_id}", data),
+            2 => println!("Received {:?} from {peer_id}", data),
+            3 => println!("Received {:?} from {peer_id}", data),
+            4 => println!("Received {:?} from {peer_id}", data),
+            _ => println!("Received unknown message type"),
         }
     }
     Ok(())
