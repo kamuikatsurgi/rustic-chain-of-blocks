@@ -177,7 +177,7 @@ async fn handle_message(
         }
     } else {
         // P2PMessageType::Response
-        let data = String::from_utf8(msg.data.unwrap());
+        let data = String::from_utf8(msg.data.unwrap())?;
         match msg.id {
             0 => println!("Received {:?} from {peer_id}", data),
             1 => println!("Received {:?} from {peer_id}", data),
