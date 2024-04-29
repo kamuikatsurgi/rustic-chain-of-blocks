@@ -1,7 +1,13 @@
 use base16ct::lower::encode_string;
+use ethers::{
+    core::types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+    signers::{LocalWallet, Signer},
+    types::Address,
+};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
+use std::str::FromStr;
 
 pub type Transactions = Vec<Transaction>;
 
@@ -16,6 +22,19 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    pub async fn new(from: String, to: String, value: u64, pk: String) -> Result<Self> {
+        let (v, r, s) = sign_transaction(&from, &to, value, &pk).await?;
+
+        Ok(Transaction {
+            sender: from,
+            receiver: to,
+            value: value,
+            v,
+            r,
+            s,
+        })
+    }
+
     pub fn get_transaction_hash(&self) -> Result<String> {
         let hash = Keccak256::new()
             .chain_update(self.sender.clone())
@@ -28,6 +47,26 @@ impl Transaction {
         let hash_hex = encode_string(&hash);
         Ok(hash_hex)
     }
+}
+
+pub async fn sign_transaction(
+    from: &str,
+    to: &str,
+    value: u64,
+    pk: &str,
+) -> Result<(String, String, String)> {
+    let from = Address::from_str(&from)?;
+    let to = Address::from_str(&to)?;
+    let wallet = LocalWallet::from_str(&pk)?;
+
+    let tx = TypedTransaction::Legacy(TransactionRequest::new().from(from).to(to).value(value));
+    let signature = wallet.sign_transaction(&tx).await?;
+
+    let v = signature.v.to_string();
+    let r = signature.r.to_string();
+    let s = signature.s.to_string();
+
+    Ok((v, r, s))
 }
 
 pub fn get_transaction_root(txs: &mut Transactions) -> Result<String> {
@@ -47,7 +86,8 @@ pub fn get_transaction_root(txs: &mut Transactions) -> Result<String> {
         .map(|tx| tx.get_transaction_hash().unwrap())
         .collect();
 
-    Ok(construct_root(txs_hashes)?)
+    let root = construct_root(txs_hashes)?;
+    Ok(root)
 }
 
 pub fn construct_root(leaves: Vec<String>) -> Result<String> {
