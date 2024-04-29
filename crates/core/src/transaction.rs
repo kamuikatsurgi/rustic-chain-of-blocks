@@ -55,9 +55,9 @@ pub async fn sign_transaction(
     value: u64,
     pk: &str,
 ) -> Result<(String, String, String)> {
-    let from = Address::from_str(&from)?;
-    let to = Address::from_str(&to)?;
-    let wallet = LocalWallet::from_str(&pk)?;
+    let from = Address::from_str(from)?;
+    let to = Address::from_str(to)?;
+    let wallet = LocalWallet::from_str(pk)?;
 
     let tx = TypedTransaction::Legacy(TransactionRequest::new().from(from).to(to).value(value));
     let signature = wallet.sign_transaction(&tx).await?;
