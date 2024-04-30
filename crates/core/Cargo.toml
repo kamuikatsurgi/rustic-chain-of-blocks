@@ -8,6 +8,7 @@ description = "Abstract implementation of Ethereum"
 [dependencies]
 log.workspace = true
 eyre.workspace = true
+rand.workspace = true
 sha3.workspace = true
 tokio.workspace = true
 serde.workspace = true

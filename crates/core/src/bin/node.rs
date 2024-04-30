@@ -113,6 +113,7 @@ enum P2PMessageType {
 #[derive(Debug, Serialize, Deserialize)]
 struct P2PMessage {
     id: u64,
+    random: u64,
     code: Option<u64>,
     want: Option<u64>,
     data: Option<Vec<u8>>,
@@ -124,6 +125,7 @@ async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<(
 
     let msg = P2PMessage {
         id: input[0].parse::<u64>()?,
+        random: rand::random::<u64>(),
         code: None,
         want: None,
         data: None,
@@ -155,12 +157,13 @@ async fn handle_message(
 ) -> Result<()> {
     let msg: P2PMessage = serde_json::from_slice(&message)?;
     if msg.msgtype == P2PMessageType::Request {
-        println!("Received message {:?} from peer {peer_id}", msg.id);
+        println!("Received message with id {:?} from peer {peer_id}", msg.id);
         match msg.id {
             // Sending Hello as response for every request as of now.
             _ => {
                 let msg_resp = P2PMessage {
                     id: msg.id,
+                    random: rand::random::<u64>(),
                     code: None,
                     want: None,
                     data: Some("Hello".to_string().as_bytes().to_vec()),
