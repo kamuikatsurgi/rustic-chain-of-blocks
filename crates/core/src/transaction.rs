@@ -69,7 +69,7 @@ pub async fn sign_transaction(
     Ok((v, r, s))
 }
 
-pub fn get_transaction_root(txs: &mut Transactions) -> Result<String> {
+pub fn get_transactions_root(txs: &mut Transactions) -> Result<String> {
     if txs.is_empty() {
         let mut hasher = Keccak256::new();
         hasher.update(String::default());
