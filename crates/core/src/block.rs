@@ -1,6 +1,8 @@
 use crate::transaction::Transactions;
 use serde::{Deserialize, Serialize};
 
+pub type Blocks = Vec<Block>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub header: Header,

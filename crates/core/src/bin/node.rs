@@ -113,10 +113,10 @@ enum P2PMessageType {
 #[derive(Debug, Serialize, Deserialize)]
 struct P2PMessage {
     id: u64,
-    random: u64,
     code: Option<u64>,
     want: Option<u64>,
     data: Option<Vec<u8>>,
+    random: u64,
     msgtype: P2PMessageType,
 }
 
@@ -125,10 +125,10 @@ async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<(
 
     let msg = P2PMessage {
         id: input[0].parse::<u64>()?,
-        random: rand::random::<u64>(),
         code: None,
         want: None,
         data: None,
+        random: rand::random::<u64>(),
         msgtype: P2PMessageType::Request,
     };
 
@@ -163,10 +163,10 @@ async fn handle_message(
             _ => {
                 let msg_resp = P2PMessage {
                     id: msg.id,
-                    random: rand::random::<u64>(),
                     code: None,
                     want: None,
                     data: Some("Hello".to_string().as_bytes().to_vec()),
+                    random: rand::random::<u64>(),
                     msgtype: P2PMessageType::Response,
                 };
 
