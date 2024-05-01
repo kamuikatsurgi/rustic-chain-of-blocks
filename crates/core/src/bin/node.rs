@@ -4,13 +4,14 @@ use libp2p::{
     gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId, Swarm,
 };
 use once_cell::sync::Lazy;
+use rustic_chain_of_blocks::blockchain::Blockchain;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     time::Duration,
 };
-use tokio::{io, io::AsyncBufReadExt, select};
+use tokio::{io, io::AsyncBufReadExt, select, time::interval};
 use tracing_subscriber::EnvFilter;
 
 static TOPIC: Lazy<gossipsub::IdentTopic> = Lazy::new(|| gossipsub::IdentTopic::new("P2P"));
@@ -70,8 +71,13 @@ async fn main() -> Result<()> {
 
     println!("Node is live!");
 
+    let _blockchain = Blockchain::init()?;
+    let mut block_time = interval(Duration::from_secs(5));
+
     loop {
         select! {
+            _ = block_time.tick() => {
+            }
             Ok(Some(line)) = stdin.next_line() => {
                 handle_input(&mut swarm, line.to_string()).await?;
             }
