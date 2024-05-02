@@ -73,8 +73,12 @@ pub fn get_account_by_address(address: &str) -> Result<Account> {
     let account = accounts
         .iter()
         .find(|acc| acc.address == address)
-        .unwrap()
-        .clone();
+        .cloned()
+        .unwrap_or_else(|| Account {
+            address: address.to_string(),
+            balance: 1000,
+            nonce: 0,
+        });
     Ok(account)
 }
 
