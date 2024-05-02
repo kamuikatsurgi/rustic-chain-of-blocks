@@ -74,7 +74,8 @@ pub fn get_transactions_root(txs: &mut Transactions) -> Result<String> {
         let mut hasher = Keccak256::new();
         hasher.update(String::default());
         let hash = hasher.finalize();
-        return Ok(encode_string(&hash));
+        let root = format!("0x{}", encode_string(&hash));
+        return Ok(root);
     }
 
     if txs.len() % 2 != 0 {
@@ -86,7 +87,7 @@ pub fn get_transactions_root(txs: &mut Transactions) -> Result<String> {
         .map(|tx| tx.get_transaction_hash().unwrap())
         .collect();
 
-    let root = construct_root(txs_hashes)?;
+    let root = format!("0x{}", construct_root(txs_hashes)?);
     Ok(root)
 }
 

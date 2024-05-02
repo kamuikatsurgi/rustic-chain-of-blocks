@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Write},
     path::Path,
 };
 
@@ -55,7 +55,6 @@ pub fn update_accounts(account: &Account) -> Result<()> {
     let path = Path::new(ACCOUNTS_JSON);
     let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
     let accounts_json = serde_json::to_string_pretty(&accounts)?;
-    file.seek(SeekFrom::Start(0))?;
     file.write_all(accounts_json.as_bytes())?;
     Ok(())
 }
@@ -86,7 +85,8 @@ pub fn get_state_root() -> Result<String> {
     if accounts.is_empty() {
         hasher.update(String::default());
         let hash = hasher.finalize();
-        return Ok(encode_string(&hash));
+        let state_root = format!("0x{}", encode_string(&hash));
+        return Ok(state_root);
     }
 
     let account_hashes: Vec<String> = accounts
@@ -99,6 +99,6 @@ pub fn get_state_root() -> Result<String> {
     }
 
     let hash = hasher.finalize();
-    let state_root = encode_string(&hash);
+    let state_root = format!("0x{}", encode_string(&hash));
     Ok(state_root)
 }

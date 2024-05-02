@@ -4,7 +4,12 @@ use libp2p::{
     gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId, Swarm,
 };
 use once_cell::sync::Lazy;
-use rustic_chain_of_blocks::{account::*, blockchain::*};
+use rustic_chain_of_blocks::{
+    account::accounts_init,
+    blockchain::{get_last_block, Blockchain},
+    mempool::{get_all_transaction_reqs, mempool_init},
+    transaction::Transaction,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::hash_map::DefaultHasher,
@@ -69,15 +74,27 @@ async fn main() -> Result<()> {
     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    println!("Node is live!");
+    println!("💻 Node is live! 💻");
 
     let _ = accounts_init()?;
-    let _blockchain = Blockchain::init()?;
-    let mut block_time = interval(Duration::from_secs(5));
+    let _ = mempool_init()?;
+    let mut blockchain = Blockchain::init()?;
+    let mut block_time = interval(Duration::from_secs(12));
+    block_time.tick().await;
 
     loop {
         select! {
             _ = block_time.tick() => {
+                let reqs = get_all_transaction_reqs()?;
+                let mut txs = vec![];
+                if !reqs.is_empty() {
+                    for req in reqs {
+                        let tx = Transaction::new(req.from, req.to, req.value, req.pk).await?;
+                        txs.push(tx);
+                    }
+                }
+                let parent_block = get_last_block()?;
+                let _ = blockchain.mine(txs.clone(), &parent_block)?;
             }
             Ok(Some(line)) = stdin.next_line() => {
                 handle_input(&mut swarm, line.to_string()).await?;
