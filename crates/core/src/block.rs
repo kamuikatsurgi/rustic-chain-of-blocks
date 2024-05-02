@@ -1,4 +1,4 @@
-use crate::transaction::{get_transactions_root, Transactions};
+use crate::{account::*, transaction::*};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -36,12 +36,12 @@ pub struct Header {
 impl Block {
     pub fn genesis() -> Result<Self> {
         let difficulty: u64 = rand::random::<u8>().into();
-        let txs: Transactions = vec![];
+        let txs = vec![];
         let header = Header {
             parent_hash: "0x0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             miner: MINERS[0].to_string(),
-            state_root: String::default(),
+            state_root: format!("0x{}", get_state_root()?),
             transactions_root: format!("0x{}", get_transactions_root(&mut txs.clone())?),
             difficulty,
             total_difficulty: difficulty,

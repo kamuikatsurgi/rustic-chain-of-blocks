@@ -17,22 +17,20 @@ pub struct Blockchain {
 impl Blockchain {
     pub fn init() -> Result<Self> {
         let path = Path::new(BLOCKCHAIN_JSON);
-        let mut file = match OpenOptions::new().read(true).open(path) {
-            Ok(f) => f,
-            Err(_) => {
-                let genesis_block = Block::genesis()?;
-                let blockchain = Blockchain {
-                    blocks: vec![genesis_block.clone()],
-                };
-                let blockchain_json = serde_json::to_string_pretty(&blockchain)?;
-                let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-                file.write_all(blockchain_json.as_bytes())?;
-                println!("Mined genesis block 🎉");
-                println!("Genesis Block:\n{:#?}", genesis_block);
-                return Ok(blockchain);
-            }
-        };
+        if !path.exists() {
+            let genesis_block = Block::genesis()?;
+            let blockchain = Blockchain {
+                blocks: vec![genesis_block.clone()],
+            };
+            let blockchain_json = serde_json::to_string_pretty(&blockchain)?;
+            let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+            file.write_all(blockchain_json.as_bytes())?;
+            println!("Mined genesis block 🎉");
+            println!("Genesis Block:\n{:#?}", genesis_block);
+            return Ok(blockchain);
+        }
         println!("Syncing with latest state of blockchain 🔄");
+        let mut file = OpenOptions::new().read(true).open(path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
         let blockchain: Blockchain = serde_json::from_str(&content)?;

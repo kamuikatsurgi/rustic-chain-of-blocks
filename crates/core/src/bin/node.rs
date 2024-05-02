@@ -4,7 +4,7 @@ use libp2p::{
     gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId, Swarm,
 };
 use once_cell::sync::Lazy;
-use rustic_chain_of_blocks::blockchain::Blockchain;
+use rustic_chain_of_blocks::{account::*, blockchain::*};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::hash_map::DefaultHasher,
@@ -71,6 +71,7 @@ async fn main() -> Result<()> {
 
     println!("Node is live!");
 
+    let _ = accounts_init()?;
     let _blockchain = Blockchain::init()?;
     let mut block_time = interval(Duration::from_secs(5));
 
