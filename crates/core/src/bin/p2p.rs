@@ -6,11 +6,8 @@ use libp2p::{
 };
 use once_cell::sync::Lazy;
 use rustic_chain_of_blocks::{
-    account::accounts_init,
     block::Block,
-    blockchain::{get_last_block, get_last_n_blocks, Blockchain},
-    mempool::{get_all_transaction_reqs, mempool_init},
-    p2p::{P2PMessage, VoteOnBlock},
+    p2p::{NBlocks, P2PMessage, VoteOnBlock},
     transaction::Transaction,
 };
 use std::{
@@ -18,14 +15,14 @@ use std::{
     hash::{Hash, Hasher},
     time::Duration,
 };
-use tokio::{io, select, time::interval};
+use tokio::{io, io::AsyncBufReadExt, select};
 use tracing_subscriber::EnvFilter;
 
 static TOPIC: Lazy<gossipsub::IdentTopic> =
     Lazy::new(|| gossipsub::IdentTopic::new("Rustic Chain of Blocks"));
 
 #[derive(NetworkBehaviour)]
-struct RCOBBehaviour {
+struct P2PBehaviour {
     gossipsub: gossipsub::Behaviour,
     mdns: mdns::tokio::Behaviour,
 }
@@ -65,73 +62,46 @@ async fn main() -> Result<()> {
 
             let mdns =
                 mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
-            Ok(RCOBBehaviour { gossipsub, mdns })
+            Ok(P2PBehaviour { gossipsub, mdns })
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
 
     swarm.behaviour_mut().gossipsub.subscribe(&TOPIC)?;
-
     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    println!("🦀 Blockchain is live! 🦀");
+    println!("💻 P2P Node is live! 💻");
 
-    accounts_init()?;
-    mempool_init()?;
-    let mut blockchain = Blockchain::init()?;
-
-    let mut block_time = interval(Duration::from_secs(8));
-    block_time.tick().await;
-
-    let mut yes_votes: u64 = 0;
+    let mut stdin = io::BufReader::new(io::stdin()).lines();
 
     loop {
         select! {
-            _ = block_time.tick() => {
-                let reqs = get_all_transaction_reqs()?;
-                let mut txs = vec![];
-                if !reqs.is_empty() {
-                    for req in reqs {
-                        let tx = Transaction::new(req.from, req.to, req.value, req.pk).await?;
-                        txs.push(tx.clone());
-                        handle_send_tx(&mut swarm, tx.clone()).await?;
-                    }
-                }
-                let parent_block = get_last_block()?;
-                let proposed_block = blockchain.propose_block(txs.clone(), &parent_block)?;
-                handle_send_block(&mut swarm, 5, proposed_block.clone()).await?;
-
-                tokio::time::sleep(Duration::from_secs(4)).await;
-
-                if yes_votes > (swarm.connected_peers().count() / 2).try_into()? {
-                    println!("Got majority votes, finalizing the block...");
-                    blockchain.commit_block(proposed_block.clone())?;
-                    yes_votes = 0;
-                }
+            Ok(Some(input)) = stdin.next_line() => {
+                handle_input(&mut swarm, input.to_string()).await?;
             }
             event = swarm.select_next_some() => match event {
-                SwarmEvent::Behaviour(RCOBBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
+                SwarmEvent::Behaviour(P2PBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                     for (peer_id, _multiaddr) in list {
                         println!("Discovered a new P2P peer {peer_id}");
                         swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     }
                 },
-                SwarmEvent::Behaviour(RCOBBehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
+                SwarmEvent::Behaviour(P2PBehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
                     for (peer_id, _multiaddr) in list {
                         println!("P2P Peer {peer_id} has expired");
                         swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                     }
                 },
-                SwarmEvent::Behaviour(RCOBBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                SwarmEvent::Behaviour(P2PBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                     propagation_source: peer_id,
                     message_id: _id,
                     message,
                 })) => {
-                    handle_message(&mut swarm, peer_id, message.data, &mut yes_votes).await?
+                    handle_message(&mut swarm, peer_id, message.data).await?
                 },
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Blockchain is live on {address}");
+                    println!("P2P Node is live on {address}");
                 },
                 _ => ()
             }
@@ -139,11 +109,98 @@ async fn main() -> Result<()> {
     }
 }
 
+async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<()> {
+    let input: Vec<&str> = line.split_whitespace().collect();
+    let id = input[0].parse::<u64>()?;
+    let code = None;
+    let want = None;
+    let random = rand::random::<u64>();
+    let mut out = Vec::<u8>::new();
+
+    match id {
+        0 => {
+            "Ping".encode(&mut out);
+            let data = Some(out);
+            let msg = P2PMessage {
+                id,
+                code,
+                want,
+                data,
+                random,
+            };
+            let msgjson = serde_json::to_string(&msg)?;
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            println!("Sent Ping message");
+        }
+        1 => (),
+        2 => {
+            let local_address = swarm.local_peer_id().to_base58();
+            local_address.encode(&mut out);
+            let data = Some(out);
+            let msg = P2PMessage {
+                id,
+                code,
+                want,
+                data,
+                random,
+            };
+            let msgjson = serde_json::to_string(&msg)?;
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            println!("Sent Address message");
+        }
+        3 => (),
+        4 => (),
+        5 => (),
+        6 => {
+            let want = input[1].parse::<u64>()?;
+            let msg = P2PMessage {
+                id,
+                code,
+                want: Some(want),
+                data: None,
+                random,
+            };
+            let msgjson = serde_json::to_string(&msg)?;
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            println!("Sent GetBlock message");
+        }
+        7 => (),
+        8 => {
+            let msg = P2PMessage {
+                id,
+                code,
+                want,
+                data: None,
+                random,
+            };
+            let msgjson = serde_json::to_string(&msg)?;
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            println!("Sent GetLatestBlock message");
+        }
+        9 => (),
+        10 => (),
+        _ => println!("Unknown message type"),
+    }
+
+    Ok(())
+}
+
 async fn handle_message(
-    swarm: &mut Swarm<RCOBBehaviour>,
+    swarm: &mut Swarm<P2PBehaviour>,
     peer_id: PeerId,
     message: Vec<u8>,
-    yes_votes: &mut u64,
 ) -> Result<()> {
     let recv_msg = serde_json::from_slice::<P2PMessage>(&message)?;
     let code = None;
@@ -153,135 +210,78 @@ async fn handle_message(
     let mut out = Vec::<u8>::new();
 
     match recv_msg.id {
-        0 => {
-            "Pong".encode(&mut out);
-            let data = Some(out);
-            let msg = P2PMessage {
-                id: 1,
-                code,
-                want,
-                data,
-                random,
-            };
-            let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
-            println!("Sent Pong in response to Ping from {peer_id}");
-        }
-        1 => (),
-        2 => {
-            let address = swarm.local_peer_id().to_base58();
-            address.encode(&mut out);
-            let data = Some(out);
-            let msg = P2PMessage {
-                id: 3,
-                code,
-                want,
-                data,
-                random,
-            };
-            let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
-            println!("Sent {} in response to Address from {peer_id}", address);
-        }
-        3 => (),
-        4 => (),
-        5 => (),
-        6 => {
-            let num_blocks = recv_msg.want.unwrap();
-            let blocks = get_last_n_blocks(num_blocks.try_into()?)?;
-            blocks.encode(&mut out);
-            let data = Some(out);
-            let msg = P2PMessage {
-                id: 7,
-                code,
-                want,
-                data,
-                random,
-            };
-            let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
-            println!("Sent Block in response to GetBlock from {peer_id}");
-        }
-        7 => (),
-        8 => {
-            let block_num = get_last_block()?.header.number;
-            block_num.encode(&mut out);
-            let data = Some(out);
-            let msg = P2PMessage {
-                id: 9,
-                code,
-                want,
-                data,
-                random,
-            };
-            let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
-            println!("Sent GetLatestBlockResponse in response to GetLatestBlock from {peer_id}");
-        }
-        9 => (),
-        10 => {
+        0 => (),
+        1 => {
             let recv_data = recv_msg.data.unwrap();
-            let recv_vote = VoteOnBlock::decode(&mut recv_data.as_slice())?;
             println!(
-                "Received {} for block number {}",
-                recv_vote.vote, recv_vote.block_number
+                "Received {:?} for Ping from {peer_id}",
+                String::decode(&mut recv_data.as_slice())?
             );
-            if recv_vote.vote == "YES" {
-                *yes_votes += 1;
-            }
         }
-        _ => println!("Unknown message type"),
+        2 => (),
+        3 => {
+            let recv_data = recv_msg.data.unwrap();
+            println!(
+                "Received {:?} for Address message",
+                String::decode(&mut recv_data.as_slice())?
+            );
+        }
+        4 => {
+            let recv_tx = recv_msg.data.unwrap();
+            let decoded_tx = Transaction::decode(&mut recv_tx.as_slice())?;
+            println!(
+                "Received a NewTransaction message from {peer_id}\n{:#?}",
+                decoded_tx
+            );
+        }
+        5 => {
+            let recv_block = recv_msg.data.unwrap();
+            let decoded_block = Block::decode(&mut recv_block.as_slice())?;
+            println!(
+                "Received a NewBlock message from {peer_id}\n{:#?}",
+                decoded_block.clone()
+            );
+            let vote = VoteOnBlock {
+                block_number: decoded_block.header.number,
+                vote: "YES".to_string(),
+            };
+            vote.encode(&mut out);
+            let data = Some(out);
+            let msg = P2PMessage {
+                id: 10,
+                code,
+                want,
+                data,
+                random,
+            };
+            let msgjson = serde_json::to_string(&msg)?;
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            println!("Voting YES for the proposed block");
+        }
+        6 => (),
+        7 => {
+            let recv_blocks = recv_msg.data.unwrap();
+            let decoded_blocks = NBlocks::decode(&mut recv_blocks.as_slice())?;
+            println!(
+                "Received a Block message from {peer_id}\n{:#?}",
+                decoded_blocks
+            );
+        }
+        8 => (),
+        9 => {
+            let recv_block_number = recv_msg.data.unwrap();
+            let decoded_block_number = u64::decode(&mut recv_block_number.as_slice())?;
+            println!(
+                "Received a GetLatestBlockResponse message from {peer_id} with block number {}",
+                decoded_block_number
+            );
+        }
+        10 => (),
+        _ => (),
     }
-
-    Ok(())
-}
-
-async fn handle_send_block(swarm: &mut Swarm<RCOBBehaviour>, id: u64, block: Block) -> Result<()> {
-    let mut out = Vec::<u8>::new();
-    block.encode(&mut out);
-    let msg = P2PMessage {
-        id,
-        code: None,
-        want: None,
-        data: Some(out),
-        random: rand::random::<u64>(),
-    };
-    let msgjson = serde_json::to_string(&msg)?;
-    swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(TOPIC.clone(), msgjson.as_bytes())?;
-
-    Ok(())
-}
-
-async fn handle_send_tx(swarm: &mut Swarm<RCOBBehaviour>, tx: Transaction) -> Result<()> {
-    let mut out = Vec::<u8>::new();
-    tx.encode(&mut out);
-    let msg = P2PMessage {
-        id: 4,
-        code: None,
-        want: None,
-        data: Some(out),
-        random: rand::random::<u64>(),
-    };
-    let msgjson = serde_json::to_string(&msg)?;
-    swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(TOPIC.clone(), msgjson.as_bytes())?;
 
     Ok(())
 }

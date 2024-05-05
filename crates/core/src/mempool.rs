@@ -37,7 +37,6 @@ pub fn get_all_transaction_reqs() -> Result<Mempool> {
     let mempool: Mempool = serde_json::from_str(&contents)?;
     let empty_mempool = vec![];
     update_mempool(&empty_mempool)?;
-
     Ok(mempool)
 }
 

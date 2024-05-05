@@ -2,6 +2,7 @@ use crate::{
     account::get_state_root,
     transaction::{get_transactions_root, Transactions},
 };
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use base16ct::lower::encode_string;
 use eyre::Result;
 use serde::{Deserialize, Serialize};
@@ -18,13 +19,13 @@ pub const MINERS: [&str; 5] = [
 
 pub type Blocks = Vec<Block>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, RlpEncodable, RlpDecodable)]
 pub struct Block {
     pub header: Header,
     pub txs: Transactions,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, RlpEncodable, RlpDecodable)]
 pub struct Header {
     pub parent_hash: String,
     pub miner: String,
@@ -69,7 +70,6 @@ impl Header {
 impl Block {
     pub fn genesis() -> Result<Self> {
         let txs = vec![];
-
         let parent_hash =
             String::from("0x0000000000000000000000000000000000000000000000000000000000000000");
         let miner = String::from(MINERS[0]);

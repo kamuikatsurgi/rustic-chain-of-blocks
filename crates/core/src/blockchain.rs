@@ -1,6 +1,7 @@
 use crate::{
     account::get_state_root,
     block::{Block, Blocks, MINERS},
+    p2p::NBlocks,
     transaction::{get_transactions_root, Transactions},
 };
 use eyre::Result;
@@ -48,7 +49,7 @@ impl Blockchain {
         Ok(blockchain)
     }
 
-    pub fn mine(&mut self, txs: Transactions, parent_block: &Block) -> Result<()> {
+    pub fn propose_block(&self, txs: Transactions, parent_block: &Block) -> Result<Block> {
         let parent_hash = parent_block.get_block_hash()?;
         let miner = MINERS[(parent_block.header.number as usize) % 5].to_string();
         let state_root = get_state_root()?;
@@ -59,7 +60,9 @@ impl Blockchain {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let nonce = parent_block.header.nonce + 1;
 
-        let block = Block::new(
+        println!("🎉 Proposed a new block by miner {} 🎉", miner);
+
+        Ok(Block::new(
             txs,
             parent_hash,
             miner,
@@ -71,14 +74,14 @@ impl Blockchain {
             timestamp,
             nonce,
             vec![],
-        );
+        ))
+    }
 
+    pub fn commit_block(&mut self, block: Block) -> Result<()> {
         self.blocks.push(block.clone());
-        let _ = update_blockchain(&self);
-
+        update_blockchain(self)?;
         println!("🎉 Mined a new block 🎉");
-        println!("{:#?}", block.clone());
-
+        println!("{:#?}", block);
         Ok(())
     }
 }
@@ -90,6 +93,24 @@ pub fn get_last_block() -> Result<Block> {
     file.read_to_string(&mut contents)?;
     let blockchain: Blockchain = serde_json::from_str(&contents)?;
     Ok(blockchain.blocks.last().unwrap().clone())
+}
+
+pub fn get_last_n_blocks(n: usize) -> Result<NBlocks> {
+    let path = Path::new(BLOCKCHAIN_JSON);
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let blockchain: Blockchain = serde_json::from_str(&contents)?;
+
+    let num_blocks = blockchain.blocks.len();
+    let start_index = if num_blocks > n { num_blocks - n } else { 0 };
+    let last_n_blocks = blockchain.blocks[start_index..].to_vec();
+
+    let nblocks = NBlocks {
+        blocks: last_n_blocks,
+    };
+
+    Ok(nblocks)
 }
 
 pub fn update_blockchain(chain: &Blockchain) -> Result<()> {

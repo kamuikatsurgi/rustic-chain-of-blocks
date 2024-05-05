@@ -1,3 +1,5 @@
+use crate::account::get_account_by_address;
+use alloy_rlp::{RlpDecodable, RlpEncodable};
 use base16ct::lower::encode_string;
 use ethers::{
     core::types::{transaction::eip2718::TypedTransaction, TransactionRequest},
@@ -11,11 +13,12 @@ use std::str::FromStr;
 
 pub type Transactions = Vec<Transaction>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, RlpEncodable, RlpDecodable)]
 pub struct Transaction {
     pub sender: String,
     pub receiver: String,
     pub value: u64,
+    pub nonce: u64,
     pub v: String,
     pub r: String,
     pub s: String,
@@ -23,12 +26,14 @@ pub struct Transaction {
 
 impl Transaction {
     pub async fn new(from: String, to: String, value: u64, pk: String) -> Result<Self> {
+        let nonce = get_account_by_address(&from)?.nonce;
         let (v, r, s) = sign_transaction(&from, &to, value, &pk).await?;
 
         Ok(Transaction {
             sender: from,
             receiver: to,
-            value: value,
+            value,
+            nonce,
             v,
             r,
             s,
@@ -39,7 +44,8 @@ impl Transaction {
         let hash = Keccak256::new()
             .chain_update(self.sender.clone())
             .chain_update(self.receiver.clone())
-            .chain_update(self.value.to_string().clone())
+            .chain_update(self.value.to_string())
+            .chain_update(self.nonce.to_string())
             .chain_update(self.v.clone())
             .chain_update(self.r.clone())
             .chain_update(self.s.clone())
@@ -55,11 +61,18 @@ pub async fn sign_transaction(
     value: u64,
     pk: &str,
 ) -> Result<(String, String, String)> {
+    let nonce = get_account_by_address(from)?.nonce;
     let from = Address::from_str(from)?;
     let to = Address::from_str(to)?;
     let wallet = LocalWallet::from_str(pk)?;
 
-    let tx = TypedTransaction::Legacy(TransactionRequest::new().from(from).to(to).value(value));
+    let tx = TypedTransaction::Legacy(
+        TransactionRequest::new()
+            .from(from)
+            .to(to)
+            .value(value)
+            .nonce(nonce),
+    );
     let signature = wallet.sign_transaction(&tx).await?;
 
     let v = signature.v.to_string();
