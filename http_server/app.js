@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(cors(corsOption));
 
 app.get("/blockNumber", (req, res) => {
-    fs.readFile('blockchain.json', 'utf8', (err, data) => {
+    fs.readFile('../blockchain.json', 'utf8', (err, data) => {
         if (err) {
             console.error('Error reading JSON file:', err);
             res.status(500).json({ error: 'Internal Server Error' });
@@ -54,7 +54,7 @@ app.get('/block', (req, res) => {
         return res.status(400).json({ error: 'Please provide only one of blockNumber or blockHash query parameter' });
     }
     
-    fs.readFile('blockchain.json', 'utf8', (err, data) => {
+    fs.readFile('../blockchain.json', 'utf8', (err, data) => {
         if (err) {
             console.error('Error reading JSON file:', err);
             res.status(500).json({ error: 'Internal Server Error' });
