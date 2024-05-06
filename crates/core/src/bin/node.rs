@@ -81,33 +81,37 @@ async fn main() -> Result<()> {
     mempool_init()?;
     let mut blockchain = Blockchain::init()?;
 
-    let mut block_time = interval(Duration::from_secs(8));
+    let mut block_time = interval(Duration::from_secs(5));
     block_time.tick().await;
 
+    let mut proposed_block = Block::genesis()?;
     let mut yes_votes: u64 = 0;
+    let mut proposed = false;
 
     loop {
         select! {
             _ = block_time.tick() => {
-                let reqs = get_all_transaction_reqs()?;
-                let mut txs = vec![];
-                if !reqs.is_empty() {
-                    for req in reqs {
-                        let tx = Transaction::new(req.from, req.to, req.value, req.pk).await?;
-                        txs.push(tx.clone());
-                        handle_send_tx(&mut swarm, tx.clone()).await?;
+                if !proposed {
+                    let reqs = get_all_transaction_reqs()?;
+                    let mut txs = vec![];
+                    if !reqs.is_empty() {
+                        for req in reqs {
+                            let tx = Transaction::new(req.from, req.to, req.value, req.pk).await?;
+                            txs.push(tx.clone());
+                            handle_send_tx(&mut swarm, tx.clone()).await?;
+                        }
                     }
-                }
-                let parent_block = get_last_block()?;
-                let proposed_block = blockchain.propose_block(txs.clone(), &parent_block)?;
-                handle_send_block(&mut swarm, 5, proposed_block.clone()).await?;
-
-                tokio::time::sleep(Duration::from_secs(4)).await;
-
-                if yes_votes > (swarm.connected_peers().count() / 2).try_into()? {
-                    println!("Got majority votes, finalizing the block...");
-                    blockchain.commit_block(proposed_block.clone())?;
+                    let parent_block = get_last_block()?;
+                    proposed_block = blockchain.propose_block(txs.clone(), &parent_block)?;
+                    handle_send_block(&mut swarm, 5, proposed_block.clone()).await?;
+                    proposed = true;
+                } else {
+                    if yes_votes > (swarm.connected_peers().count() / 2).try_into()? {
+                        println!("Got majority votes, finalizing the block...");
+                        blockchain.commit_block(proposed_block.clone())?;
+                    }
                     yes_votes = 0;
+                    proposed = false;
                 }
             }
             event = swarm.select_next_some() => match event {
