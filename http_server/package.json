@@ -1,0 +1,20 @@
+{
+  "name": "rustic-chain-of-blocks",
+  "version": "1.0.0",
+  "description": "a http server for this abstract blockchain",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "server": "npx nodemon app.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "keccak": "^3.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
