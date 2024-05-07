@@ -101,6 +101,7 @@ pub fn get_transactions_root(txs: &mut Transactions) -> Result<String> {
         .collect();
 
     let root = format!("0x{}", construct_root(txs_hashes)?);
+
     Ok(root)
 }
 
@@ -124,7 +125,7 @@ pub fn construct_root(leaves: Vec<String>) -> Result<String> {
 
         nodes = parent_nodes;
         if nodes.len() == 1 {
-            root = nodes[0].clone();
+            root.clone_from(&nodes[0]);
             break;
         }
 

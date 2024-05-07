@@ -26,6 +26,7 @@ pub fn mempool_init() -> Result<()> {
         let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
         file.write_all(mempool_json.as_bytes())?;
     }
+
     Ok(())
 }
 
@@ -37,6 +38,7 @@ pub fn get_all_transaction_reqs() -> Result<Mempool> {
     let mempool: Mempool = serde_json::from_str(&contents)?;
     let empty_mempool = vec![];
     update_mempool(&empty_mempool)?;
+
     Ok(mempool)
 }
 
@@ -50,6 +52,7 @@ pub fn add_transaction_req(from: String, to: String, value: u64, pk: String) -> 
     };
     mempool.push(tx_req);
     update_mempool(&mempool)?;
+
     Ok(())
 }
 
@@ -58,5 +61,6 @@ pub fn update_mempool(mempool: &Mempool) -> Result<()> {
     let mempool_json = serde_json::to_string_pretty(mempool)?;
     let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
     file.write_all(mempool_json.as_bytes())?;
+
     Ok(())
 }

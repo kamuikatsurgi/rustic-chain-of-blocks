@@ -27,6 +27,7 @@ impl Account {
             .chain_update(self.nonce.to_string().clone())
             .finalize();
         let hash_hex = encode_string(&hash);
+
         Ok(hash_hex)
     }
 }
@@ -39,11 +40,13 @@ pub fn accounts_init() -> Result<()> {
         let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
         file.write_all(accounts_json.as_bytes())?;
     }
+
     Ok(())
 }
 
 pub fn update_accounts(account: &Account) -> Result<()> {
     let mut accounts = get_all_accounts()?;
+
     if let Some(index) = accounts
         .iter()
         .position(|acc| acc.address == account.address)
@@ -52,10 +55,12 @@ pub fn update_accounts(account: &Account) -> Result<()> {
     } else {
         accounts.push(account.clone());
     }
+
     let path = Path::new(ACCOUNTS_JSON);
     let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
     let accounts_json = serde_json::to_string_pretty(&accounts)?;
     file.write_all(accounts_json.as_bytes())?;
+
     Ok(())
 }
 
@@ -65,6 +70,7 @@ pub fn get_all_accounts() -> Result<Accounts> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let accounts: Accounts = serde_json::from_str(&contents)?;
+
     Ok(accounts)
 }
 
@@ -79,6 +85,7 @@ pub fn get_account_by_address(address: &str) -> Result<Account> {
             balance: 1000,
             nonce: 0,
         });
+
     Ok(account)
 }
 

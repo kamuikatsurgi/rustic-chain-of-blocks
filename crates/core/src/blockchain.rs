@@ -54,11 +54,8 @@ impl Blockchain {
         let miner = MINERS[(parent_block.header.number as usize) % 5].to_string();
         let state_root = get_state_root()?;
         let transactions_root = get_transactions_root(&mut txs.clone())?;
-        let difficulty = rand::random::<u8>().into();
-        let total_difficulty = parent_block.header.total_difficulty + difficulty;
         let number = parent_block.header.number + 1;
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        let nonce = parent_block.header.nonce + 1;
 
         println!("🎉 Proposed a new block by miner {} 🎉", miner);
 
@@ -68,11 +65,8 @@ impl Blockchain {
             miner,
             state_root,
             transactions_root,
-            difficulty,
-            total_difficulty,
             number,
             timestamp,
-            nonce,
             vec![],
         ))
     }
@@ -82,6 +76,7 @@ impl Blockchain {
         update_blockchain(self)?;
         println!("🎉 Mined a new block 🎉");
         println!("{:#?}", block);
+
         Ok(())
     }
 }
@@ -92,6 +87,7 @@ pub fn get_last_block() -> Result<Block> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let blockchain: Blockchain = serde_json::from_str(&contents)?;
+
     Ok(blockchain.blocks.last().unwrap().clone())
 }
 
@@ -118,5 +114,6 @@ pub fn update_blockchain(chain: &Blockchain) -> Result<()> {
     let blockchain_json = serde_json::to_string_pretty(chain)?;
     let mut file = OpenOptions::new().write(true).truncate(true).open(path)?;
     file.write_all(blockchain_json.as_bytes())?;
+
     Ok(())
 }
