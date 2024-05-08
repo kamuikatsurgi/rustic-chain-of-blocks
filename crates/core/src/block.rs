@@ -46,15 +46,7 @@ impl Header {
         timestamp: u64,
         extra_data: Vec<String>,
     ) -> Self {
-        Header {
-            parent_hash,
-            miner,
-            state_root,
-            transactions_root,
-            number,
-            timestamp,
-            extra_data,
-        }
+        Header { parent_hash, miner, state_root, transactions_root, number, timestamp, extra_data }
     }
 }
 

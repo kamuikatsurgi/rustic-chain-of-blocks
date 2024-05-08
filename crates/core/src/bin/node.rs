@@ -2,7 +2,9 @@ use alloy_rlp::{Decodable, Encodable};
 use eyre::Result;
 use futures::stream::StreamExt;
 use libp2p::{
-    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId, Swarm,
+    gossipsub, mdns, noise,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    tcp, yamux, PeerId, Swarm,
 };
 use once_cell::sync::Lazy;
 use rustic_chain_of_blocks::{
@@ -32,17 +34,11 @@ struct RCOBBehaviour {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).try_init();
 
     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()
-        .with_tcp(
-            tcp::Config::default(),
-            noise::Config::new,
-            yamux::Config::default,
-        )?
+        .with_tcp(tcp::Config::default(), noise::Config::new, yamux::Config::default)?
         .with_quic()
         .with_behaviour(|key| {
             let message_id_fn = |message: &gossipsub::Message| {
@@ -160,18 +156,9 @@ async fn handle_message(
         0 => {
             "Pong".encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id: 1,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id: 1, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent Pong in response to Ping from {peer_id}");
         }
         1 => (),
@@ -179,18 +166,9 @@ async fn handle_message(
             let address = swarm.local_peer_id().to_base58();
             address.encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id: 3,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id: 3, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent {} in response to Address from {peer_id}", address);
         }
         3 => (),
@@ -201,18 +179,9 @@ async fn handle_message(
             let blocks = get_last_n_blocks(num_blocks.try_into()?)?;
             blocks.encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id: 7,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id: 7, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent Block in response to GetBlock from {peer_id}");
         }
         7 => (),
@@ -220,28 +189,16 @@ async fn handle_message(
             let block_num = get_last_block()?.header.number;
             block_num.encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id: 9,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id: 9, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent GetLatestBlockResponse in response to GetLatestBlock from {peer_id}");
         }
         9 => (),
         10 => {
             let recv_data = recv_msg.data.unwrap();
             let recv_vote = VoteOnBlock::decode(&mut recv_data.as_slice())?;
-            println!(
-                "Received {} for block number {}",
-                recv_vote.vote, recv_vote.block_number
-            );
+            println!("Received {} for block number {}", recv_vote.vote, recv_vote.block_number);
             if recv_vote.vote == "YES" {
                 *yes_votes += 1;
             }
@@ -255,18 +212,10 @@ async fn handle_message(
 async fn handle_send_block(swarm: &mut Swarm<RCOBBehaviour>, id: u64, block: Block) -> Result<()> {
     let mut out = Vec::<u8>::new();
     block.encode(&mut out);
-    let msg = P2PMessage {
-        id,
-        code: None,
-        want: None,
-        data: Some(out),
-        random: rand::random::<u64>(),
-    };
+    let msg =
+        P2PMessage { id, code: None, want: None, data: Some(out), random: rand::random::<u64>() };
     let msgjson = serde_json::to_string(&msg)?;
-    swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(TOPIC.clone(), msgjson.as_bytes())?;
+    swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
 
     Ok(())
 }
@@ -282,10 +231,7 @@ async fn handle_send_tx(swarm: &mut Swarm<RCOBBehaviour>, tx: Transaction) -> Re
         random: rand::random::<u64>(),
     };
     let msgjson = serde_json::to_string(&msg)?;
-    swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(TOPIC.clone(), msgjson.as_bytes())?;
+    swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
 
     Ok(())
 }

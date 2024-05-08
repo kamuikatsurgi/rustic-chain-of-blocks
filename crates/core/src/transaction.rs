@@ -29,15 +29,7 @@ impl Transaction {
         let nonce = get_account_by_address(&from)?.nonce;
         let (v, r, s) = sign_transaction(&from, &to, value, &pk).await?;
 
-        Ok(Transaction {
-            sender: from,
-            receiver: to,
-            value,
-            nonce,
-            v,
-            r,
-            s,
-        })
+        Ok(Transaction { sender: from, receiver: to, value, nonce, v, r, s })
     }
 
     pub fn get_transaction_hash(&self) -> Result<String> {
@@ -67,11 +59,7 @@ pub async fn sign_transaction(
     let wallet = LocalWallet::from_str(pk)?;
 
     let tx = TypedTransaction::Legacy(
-        TransactionRequest::new()
-            .from(from)
-            .to(to)
-            .value(value)
-            .nonce(nonce),
+        TransactionRequest::new().from(from).to(to).value(value).nonce(nonce),
     );
     let signature = wallet.sign_transaction(&tx).await?;
 
@@ -95,10 +83,7 @@ pub fn get_transactions_root(txs: &mut Transactions) -> Result<String> {
         txs.push(txs[txs.len() - 1].clone());
     }
 
-    let txs_hashes: Vec<String> = txs
-        .iter()
-        .map(|tx| tx.get_transaction_hash().unwrap())
-        .collect();
+    let txs_hashes: Vec<String> = txs.iter().map(|tx| tx.get_transaction_hash().unwrap()).collect();
 
     let root = format!("0x{}", construct_root(txs_hashes)?);
 
@@ -116,10 +101,7 @@ pub fn construct_root(leaves: Vec<String>) -> Result<String> {
             let index = 2 * i;
             let left = nodes[index].clone();
             let right = nodes[index + 1].clone();
-            let hash = Keccak256::new()
-                .chain_update(left)
-                .chain_update(right)
-                .finalize();
+            let hash = Keccak256::new().chain_update(left).chain_update(right).finalize();
             parent_nodes.push(encode_string(&hash));
         }
 

@@ -47,10 +47,7 @@ pub fn accounts_init() -> Result<()> {
 pub fn update_accounts(account: &Account) -> Result<()> {
     let mut accounts = get_all_accounts()?;
 
-    if let Some(index) = accounts
-        .iter()
-        .position(|acc| acc.address == account.address)
-    {
+    if let Some(index) = accounts.iter().position(|acc| acc.address == account.address) {
         accounts[index] = account.clone();
     } else {
         accounts.push(account.clone());
@@ -80,11 +77,7 @@ pub fn get_account_by_address(address: &str) -> Result<Account> {
         .iter()
         .find(|acc| acc.address == address)
         .cloned()
-        .unwrap_or_else(|| Account {
-            address: address.to_string(),
-            balance: 1000,
-            nonce: 0,
-        });
+        .unwrap_or_else(|| Account { address: address.to_string(), balance: 1000, nonce: 0 });
 
     Ok(account)
 }
@@ -100,10 +93,8 @@ pub fn get_state_root() -> Result<String> {
         return Ok(state_root);
     }
 
-    let account_hashes: Vec<String> = accounts
-        .iter()
-        .map(|acc| acc.get_account_hash().unwrap())
-        .collect();
+    let account_hashes: Vec<String> =
+        accounts.iter().map(|acc| acc.get_account_hash().unwrap()).collect();
 
     for hash in account_hashes {
         hasher.update(hash);

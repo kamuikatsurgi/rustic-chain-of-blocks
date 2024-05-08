@@ -26,9 +26,7 @@ impl Blockchain {
 
         if !path.exists() {
             let genesis_block = Block::genesis()?;
-            let blockchain = Blockchain {
-                blocks: vec![genesis_block.clone()],
-            };
+            let blockchain = Blockchain { blocks: vec![genesis_block.clone()] };
             let blockchain_json = serde_json::to_string_pretty(&blockchain)?;
             let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
             file.write_all(blockchain_json.as_bytes())?;
@@ -102,9 +100,7 @@ pub fn get_last_n_blocks(n: usize) -> Result<NBlocks> {
     let start_index = if num_blocks > n { num_blocks - n } else { 0 };
     let last_n_blocks = blockchain.blocks[start_index..].to_vec();
 
-    let nblocks = NBlocks {
-        blocks: last_n_blocks,
-    };
+    let nblocks = NBlocks { blocks: last_n_blocks };
 
     Ok(nblocks)
 }

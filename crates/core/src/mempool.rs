@@ -44,12 +44,7 @@ pub fn get_all_transaction_reqs() -> Result<Mempool> {
 
 pub fn add_transaction_req(from: String, to: String, value: u64, pk: String) -> Result<()> {
     let mut mempool = get_all_transaction_reqs()?;
-    let tx_req = TransactionRequest {
-        from,
-        to,
-        value,
-        pk,
-    };
+    let tx_req = TransactionRequest { from, to, value, pk };
     mempool.push(tx_req);
     update_mempool(&mempool)?;
 

@@ -2,7 +2,9 @@ use alloy_rlp::{Decodable, Encodable};
 use eyre::Result;
 use futures::stream::StreamExt;
 use libp2p::{
-    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, PeerId, Swarm,
+    gossipsub, mdns, noise,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    tcp, yamux, PeerId, Swarm,
 };
 use once_cell::sync::Lazy;
 use rustic_chain_of_blocks::{
@@ -29,17 +31,11 @@ struct P2PBehaviour {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).try_init();
 
     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()
-        .with_tcp(
-            tcp::Config::default(),
-            noise::Config::new,
-            yamux::Config::default,
-        )?
+        .with_tcp(tcp::Config::default(), noise::Config::new, yamux::Config::default)?
         .with_quic()
         .with_behaviour(|key| {
             let message_id_fn = |message: &gossipsub::Message| {
@@ -121,18 +117,9 @@ async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<(
         0 => {
             "Ping".encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent Ping message");
         }
         1 => (),
@@ -140,18 +127,9 @@ async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<(
             let local_address = swarm.local_peer_id().to_base58();
             local_address.encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent Address message");
         }
         3 => (),
@@ -159,34 +137,16 @@ async fn handle_input(swarm: &mut Swarm<P2PBehaviour>, line: String) -> Result<(
         5 => (),
         6 => {
             let want = input[1].parse::<u64>()?;
-            let msg = P2PMessage {
-                id,
-                code,
-                want: Some(want),
-                data: None,
-                random,
-            };
+            let msg = P2PMessage { id, code, want: Some(want), data: None, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent GetBlock message");
         }
         7 => (),
         8 => {
-            let msg = P2PMessage {
-                id,
-                code,
-                want,
-                data: None,
-                random,
-            };
+            let msg = P2PMessage { id, code, want, data: None, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Sent GetLatestBlock message");
         }
         9 => (),
@@ -229,46 +189,26 @@ async fn handle_message(
         4 => {
             let recv_tx = recv_msg.data.unwrap();
             let decoded_tx = Transaction::decode(&mut recv_tx.as_slice())?;
-            println!(
-                "Received a NewTransaction message from {peer_id}\n{:#?}",
-                decoded_tx
-            );
+            println!("Received a NewTransaction message from {peer_id}\n{:#?}", decoded_tx);
         }
         5 => {
             let recv_block = recv_msg.data.unwrap();
             let decoded_block = Block::decode(&mut recv_block.as_slice())?;
-            println!(
-                "Received a NewBlock message from {peer_id}\n{:#?}",
-                decoded_block.clone()
-            );
-            let vote = VoteOnBlock {
-                block_number: decoded_block.header.number,
-                vote: "YES".to_string(),
-            };
+            println!("Received a NewBlock message from {peer_id}\n{:#?}", decoded_block.clone());
+            let vote =
+                VoteOnBlock { block_number: decoded_block.header.number, vote: "YES".to_string() };
             vote.encode(&mut out);
             let data = Some(out);
-            let msg = P2PMessage {
-                id: 10,
-                code,
-                want,
-                data,
-                random,
-            };
+            let msg = P2PMessage { id: 10, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
-            swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(TOPIC.clone(), msgjson.as_bytes())?;
+            swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
             println!("Voting YES for the proposed block");
         }
         6 => (),
         7 => {
             let recv_blocks = recv_msg.data.unwrap();
             let decoded_blocks = NBlocks::decode(&mut recv_blocks.as_slice())?;
-            println!(
-                "Received a Block message from {peer_id}\n{:#?}",
-                decoded_blocks
-            );
+            println!("Received a Block message from {peer_id}\n{:#?}", decoded_blocks);
         }
         8 => (),
         9 => {
