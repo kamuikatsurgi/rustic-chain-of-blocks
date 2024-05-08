@@ -1,7 +1,7 @@
 {
   "name": "rustic-chain-of-blocks",
   "version": "1.0.0",
-  "description": "a http server for this abstract blockchain",
+  "description": "An HTTP-based RPC-like server to query and interact with Rustic Chain of Blocks",
   "main": "app.js",
   "type": "module",
   "scripts": {

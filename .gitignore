@@ -1,5 +1,4 @@
 /target
-/http_server/node_modules
-blockchain.json
 accounts.json
+blockchain.json
 mempool.json
