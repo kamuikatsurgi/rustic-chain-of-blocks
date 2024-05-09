@@ -1,15 +1,19 @@
 use crate::{
     account::get_state_root,
-    block::{Block, Blocks, MINERS},
+    block::{Block, Blocks, MINERS, PKS},
     p2p::NBlocks,
     transaction::{get_transactions_root, Transactions},
 };
+use alloy_rlp::Encodable;
+use ethers::{signers::LocalWallet, types::H256};
 use eyre::Result;
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
     path::Path,
+    str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -55,6 +59,22 @@ impl Blockchain {
         let number = parent_block.header.number + 1;
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
+        let mut out = Vec::<u8>::new();
+        parent_hash.encode(&mut out);
+        miner.encode(&mut out);
+        state_root.encode(&mut out);
+        transactions_root.encode(&mut out);
+        number.encode(&mut out);
+        timestamp.encode(&mut out);
+
+        let hash = Keccak256::digest(&out);
+        let header_hash = H256::from_slice(&hash);
+
+        let miner_wallet = LocalWallet::from_str(PKS[(parent_block.header.number as usize) % 5])?;
+        let signature = miner_wallet.sign_hash(header_hash)?.to_string();
+
+        let extra_data = vec![signature];
+
         println!("🎉 Proposed a new block by miner {} 🎉", miner);
 
         Ok(Block::new(
@@ -65,7 +85,7 @@ impl Blockchain {
             transactions_root,
             number,
             timestamp,
-            vec![],
+            extra_data,
         ))
     }
 

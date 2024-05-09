@@ -1,4 +1,5 @@
 use alloy_rlp::{Decodable, Encodable};
+use ethers::types::{Signature, H160, H256};
 use eyre::Result;
 use futures::stream::StreamExt;
 use libp2p::{
@@ -12,9 +13,11 @@ use rustic_chain_of_blocks::{
     p2p::{NBlocks, P2PMessage, VoteOnBlock},
     transaction::Transaction,
 };
+use sha3::{Digest, Keccak256};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    str::FromStr,
     time::Duration,
 };
 use tokio::{io, io::AsyncBufReadExt, select};
@@ -195,14 +198,34 @@ async fn handle_message(
             let recv_block = recv_msg.data.unwrap();
             let decoded_block = Block::decode(&mut recv_block.as_slice())?;
             println!("Received a NewBlock message from {peer_id}\n{:#?}", decoded_block.clone());
-            let vote =
-                VoteOnBlock { block_number: decoded_block.header.number, vote: "YES".to_string() };
+
+            let miner_address = H160::from_str(&decoded_block.header.miner)?;
+            let miner_signature = Signature::from_str(&decoded_block.header.extra_data[0])?;
+
+            let mut buffer = Vec::<u8>::new();
+            decoded_block.header.parent_hash.encode(&mut buffer);
+            decoded_block.header.miner.encode(&mut buffer);
+            decoded_block.header.state_root.encode(&mut buffer);
+            decoded_block.header.transactions_root.encode(&mut buffer);
+            decoded_block.header.number.encode(&mut buffer);
+            decoded_block.header.timestamp.encode(&mut buffer);
+
+            let hash = Keccak256::digest(&buffer);
+            let header_hash = H256::from_slice(&hash);
+
+            let vote = if miner_signature.verify(header_hash, miner_address).is_ok() {
+                println!("Voting YES for the proposed block");
+                VoteOnBlock { block_number: decoded_block.header.number, vote: "YES".to_string() }
+            } else {
+                println!("Voting NO for the proposed block");
+                VoteOnBlock { block_number: decoded_block.header.number, vote: "NO".to_string() }
+            };
+
             vote.encode(&mut out);
             let data = Some(out);
             let msg = P2PMessage { id: 10, code, want, data, random };
             let msgjson = serde_json::to_string(&msg)?;
             swarm.behaviour_mut().gossipsub.publish(TOPIC.clone(), msgjson.as_bytes())?;
-            println!("Voting YES for the proposed block");
         }
         6 => (),
         7 => {
