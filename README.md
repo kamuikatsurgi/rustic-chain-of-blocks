@@ -27,7 +27,7 @@ Firstly, start a P2P node using the following:
 cargo run -p rustic-chain-of-blocks --bin p2p
 ```
 
-This will start a P2P node, which will vote `Yes` on the proposed blocks received by the blockchain node. You can start as many P2P nodes as you wish. Just run the above command in different terminals.
+This will start a P2P node, which will vote `Yes/No` on the proposed blocks received by the blockchain node. You can start as many P2P nodes as you wish. Just run the above command in different terminals.
 
 Then, you can start the blockchain node using the following:
 
@@ -61,7 +61,7 @@ Below are the endpoints of the server along with their functionalities:
 
 POST
 
-- `sendTx?from={address}?to={address}?value={amount}?pk={privateKey}`
+- `/sendTx?from={address}&to={address}&value={amount}&pk={privateKey}`
 
 GET
 
