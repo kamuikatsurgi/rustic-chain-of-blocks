@@ -59,10 +59,6 @@ npm run server
 
 Below are the endpoints of the server along with their functionalities:
 
-POST
-
-- `/sendTx?from={address}&to={address}&value={amount}&pk={privateKey}`
-
 GET
 
 - `/blockNumber`: Returns the most recent block number.
